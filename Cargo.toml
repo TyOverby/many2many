@@ -1,0 +1,5 @@
+[package]
+
+name = "many2many"
+version = "0.0.1"
+authors = ["TyOverby <ty@pre-alpha.com>"]
