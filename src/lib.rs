@@ -1,5 +1,5 @@
-use std::task::spawn;
-use std::comm::{channel, Sender, Receiver, Messages, TryRecvError};
+use std::thread::Thread;
+use std::sync::mpsc::{channel, Sender, Receiver, RecvError, TryRecvError, Iter};
 
 pub struct MReceiver<T> {
     subscribe: Sender<Sender<T>>,
@@ -14,13 +14,13 @@ pub fn mchannel<T: Send + Clone>() -> (Sender<T>, MReceiver<T>) {
 
 fn listen<T: Send + Clone>(r: Receiver<T>) -> Sender<Sender<T>> {
     let (ls, lr) = channel();
-    spawn(proc() {
+    Thread::spawn(move || {
         let dr = r;
         let lr = lr;
 
         let mut connected = vec![];
         loop {
-            match dr.recv_opt() {
+            match dr.recv() {
                 Ok(m) => {
                     let m: T = m;
                     loop {
@@ -29,14 +29,15 @@ fn listen<T: Send + Clone>(r: Receiver<T>) -> Sender<Sender<T>> {
                             Err(_) => break
                         }
                     }
+
                     connected.retain(|l: &Sender<T>| {
-                        match l.send_opt(m.clone()) {
+                        match l.send(m.clone()) {
                             Ok(()) => true,
                             Err(_) => false
                         }
                     });
                 }
-                Err(()) => break
+                Err(_) => break
             }
         }
     });
@@ -50,7 +51,7 @@ impl <T> MReceiver<T> where T: Send + Clone {
 
     fn from_sub(subscriber: Sender<Sender<T>>) -> MReceiver<T> {
         let (sx, rx)= channel();
-        let _ = subscriber.send_opt(sx);
+        let _ = subscriber.send(sx);
         MReceiver {
             subscribe: subscriber,
             rec: rx
@@ -61,7 +62,7 @@ impl <T> MReceiver<T> where T: Send + Clone {
         self.rec
     }
 
-    pub fn recv(&self) -> T {
+    pub fn recv(&self) -> Result<T, RecvError> {
         self.rec.recv()
     }
 
@@ -69,11 +70,7 @@ impl <T> MReceiver<T> where T: Send + Clone {
         self.rec.try_recv()
     }
 
-    pub fn recv_opt(&self) -> Result<T, ()> {
-        self.rec.recv_opt()
-    }
-
-    pub fn iter<'a>(&'a self) -> Messages<'a, T> {
+    pub fn iter<'a>(&'a self) -> Iter<'a, T> {
         self.rec.iter()
     }
 }

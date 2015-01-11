@@ -10,5 +10,8 @@ fn main() {
 
     sx.send(5u32);
 
-    println!("{} {} {}", r1.recv(), r2.recv(), r3.recv());
+    println!("{} {} {}",
+             r1.recv().unwrap(),
+             r2.recv().unwrap(),
+             r3.recv().unwrap());
 }
