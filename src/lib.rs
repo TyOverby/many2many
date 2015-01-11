@@ -58,8 +58,12 @@ impl <T> MReceiver<T> where T: Send + Clone {
         }
     }
 
-    pub fn unwrap(self) -> Receiver<T> {
+    pub fn into_inner(self) -> Receiver<T> {
         self.rec
+    }
+
+    pub fn as_inner(&self) -> &Receiver<T> {
+        &self.rec
     }
 
     pub fn recv(&self) -> Result<T, RecvError> {
