@@ -2,8 +2,10 @@ use std::thread::spawn;
 use std::sync::mpsc::{channel, Sender, Receiver, RecvError, TryRecvError, Iter};
 use std::convert::From;
 
+type FilterFn<T> = Box<Fn(&T) -> bool + 'static + Send>;
+
 pub struct MReceiver<T> {
-    subscribe: Sender<Sender<T>>,
+    subscribe: Sender<(Sender<T>, FilterFn<T>)>,
     rec: Receiver<T>
 }
 
@@ -13,7 +15,7 @@ pub fn mchannel<T: Send + Clone + 'static>() -> (Sender<T>, MReceiver<T>) {
     (ds, MReceiver::from_receiver(dr))
 }
 
-fn listen<T: Send + Clone + 'static>(r: Receiver<T>) -> Sender<Sender<T>> {
+fn listen<T: Send + Clone + 'static>(r: Receiver<T>) -> Sender<(Sender<T>, FilterFn<T>)> {
     let (ls, lr) = channel();
     spawn(move || {
         let dr = r;
@@ -31,10 +33,16 @@ fn listen<T: Send + Clone + 'static>(r: Receiver<T>) -> Sender<Sender<T>> {
                         }
                     }
 
-                    connected.retain(|l: &Sender<T>| {
-                        match l.send(m.clone()) {
-                            Ok(()) => true,
-                            Err(_) => false
+                    connected.retain(|out| {
+                        let &(ref l, ref f): &(Sender<T>, FilterFn<T>) = out;
+                        let f: &FilterFn<T> = f;
+                        if f(&m) {
+                            match l.send(m.clone()) {
+                                Ok(()) => true,
+                                Err(_) => false
+                            }
+                        } else {
+                            true
                         }
                     });
                 }
@@ -56,9 +64,9 @@ impl <T> MReceiver<T> where T: Send + Clone + 'static {
         MReceiver::from_sub(listen(other))
     }
 
-    fn from_sub(subscriber: Sender<Sender<T>>) -> MReceiver<T> {
+    fn from_sub(subscriber: Sender<(Sender<T>, FilterFn<T>)>) -> MReceiver<T> {
         let (sx, rx)= channel();
-        let _ = subscriber.send(sx);
+        let _ = subscriber.send((sx, Box::new(|_| true)));
         MReceiver {
             subscribe: subscriber,
             rec: rx
