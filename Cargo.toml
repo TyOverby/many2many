@@ -3,3 +3,7 @@
 name = "many2many"
 version = "0.0.1"
 authors = ["TyOverby <ty@pre-alpha.com>"]
+license = "MIT"
+description = "Many-to-many channels implemented on top of regular boring channels."
+repository = "https://github.com/TyOverby/many2many"
+documentation = "https://github.com/TyOverby/many2many"

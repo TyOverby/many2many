@@ -1,20 +1,24 @@
-use std::thread::Thread;
+use std::thread::spawn;
 use std::sync::mpsc::{channel, Sender, Receiver, RecvError, TryRecvError, Iter};
+use std::convert::From;
+
+type FilterFn<T> = Option<Box<Fn(&T) -> bool + 'static + Send>>;
 
 pub struct MReceiver<T> {
-    subscribe: Sender<Sender<T>>,
-    rec: Receiver<T>
+    subscribe: Sender<(Sender<T>, FilterFn<T>)>,
+    rec: Receiver<T>,
+    filter: FilterFn<T>
 }
 
-pub fn mchannel<T: Send + Clone>() -> (Sender<T>, MReceiver<T>) {
+pub fn mchannel<T: Send + Clone + 'static>() -> (Sender<T>, MReceiver<T>) {
     let (ds, dr) = channel();
 
     (ds, MReceiver::from_receiver(dr))
 }
 
-fn listen<T: Send + Clone>(r: Receiver<T>) -> Sender<Sender<T>> {
+fn listen<T: Send + Clone + 'static>(r: Receiver<T>) -> Sender<(Sender<T>, FilterFn<T>)> {
     let (ls, lr) = channel();
-    Thread::spawn(move || {
+    spawn(move || {
         let dr = r;
         let lr = lr;
 
@@ -30,10 +34,16 @@ fn listen<T: Send + Clone>(r: Receiver<T>) -> Sender<Sender<T>> {
                         }
                     }
 
-                    connected.retain(|l: &Sender<T>| {
-                        match l.send(m.clone()) {
-                            Ok(()) => true,
-                            Err(_) => false
+                    connected.retain(|out| {
+                        let &(ref l, ref f): &(Sender<T>, FilterFn<T>) = out;
+                        let f: &FilterFn<T> = f;
+                        if f.is_none() || f.as_ref().unwrap()(&m) {
+                            match l.send(m.clone()) {
+                                Ok(()) => true,
+                                Err(_) => false
+                            }
+                        } else {
+                            true
                         }
                     });
                 }
@@ -44,17 +54,24 @@ fn listen<T: Send + Clone>(r: Receiver<T>) -> Sender<Sender<T>> {
     ls
 }
 
-impl <T> MReceiver<T> where T: Send + Clone {
-    pub fn from_receiver(r: Receiver<T>) -> MReceiver<T> {
-        MReceiver::from_sub(listen(r))
+impl <T> From<Receiver<T>> for MReceiver<T> where T: Send + Clone + 'static {
+    fn from(other: Receiver<T>) -> MReceiver<T> {
+        MReceiver::from_sub(listen(other))
+    }
+}
+
+impl <T> MReceiver<T> where T: Send + Clone + 'static {
+    fn from_receiver(other: Receiver<T>) -> MReceiver<T> {
+        MReceiver::from_sub(listen(other))
     }
 
-    fn from_sub(subscriber: Sender<Sender<T>>) -> MReceiver<T> {
+    fn from_sub(subscriber: Sender<(Sender<T>, FilterFn<T>)>) -> MReceiver<T> {
         let (sx, rx)= channel();
-        let _ = subscriber.send(sx);
+        let _ = subscriber.send((sx, None));
         MReceiver {
             subscribe: subscriber,
-            rec: rx
+            rec: rx,
+            filter: None
         }
     }
 
@@ -79,7 +96,7 @@ impl <T> MReceiver<T> where T: Send + Clone {
     }
 }
 
-impl <T> Clone for MReceiver<T> where T: Send + Clone {
+impl <T> Clone for MReceiver<T> where T: Send + Clone + 'static {
     fn clone(&self) -> MReceiver<T> {
         MReceiver::from_sub(self.subscribe.clone())
     }
