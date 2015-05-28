@@ -23,32 +23,24 @@ fn listen<T: Send + Clone + 'static>(r: Receiver<T>) -> Sender<(Sender<T>, Filte
         let lr = lr;
 
         let mut connected = vec![];
-        loop {
-            match dr.recv() {
-                Ok(m) => {
-                    let m: T = m;
-                    loop {
-                        match lr.try_recv() {
-                            Ok(l) => connected.push(l),
-                            Err(_) => break
-                        }
-                    }
-
-                    connected.retain(|out| {
-                        let &(ref l, ref f): &(Sender<T>, FilterFn<T>) = out;
-                        let f: &FilterFn<T> = f;
-                        if f.is_none() || f.as_ref().unwrap()(&m) {
-                            match l.send(m.clone()) {
-                                Ok(()) => true,
-                                Err(_) => false
-                            }
-                        } else {
-                            true
-                        }
-                    });
-                }
-                Err(_) => break
+        while let Ok(m) = dr.recv() {
+            let m: T = m;
+            while let Ok(l) = lr.try_recv() {
+                connected.push(l)
             }
+
+            connected.retain(|out| {
+                let &(ref l, ref f): &(Sender<T>, FilterFn<T>) = out;
+                let f: &FilterFn<T> = f;
+                if f.is_none() || f.as_ref().unwrap()(&m) {
+                    match l.send(m.clone()) {
+                        Ok(()) => true,
+                        Err(_) => false
+                    }
+                } else {
+                    true
+                }
+            });
         }
     });
     ls
