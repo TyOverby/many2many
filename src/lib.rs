@@ -32,7 +32,7 @@ fn listen<T: Send + Clone + 'static>(r: Receiver<T>) -> Sender<(Sender<T>, Filte
             connected.retain(|out| {
                 let &(ref l, ref f): &(Sender<T>, FilterFn<T>) = out;
                 let f: &FilterFn<T> = f;
-                if f.is_none() || f.as_ref().unwrap()(&m) {
+                if f.as_ref().map(|f| f(&m)).unwrap_or(true) {
                     match l.send(m.clone()) {
                         Ok(()) => true,
                         Err(_) => false
